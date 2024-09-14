@@ -1,5 +1,6 @@
 import numpy as np
 import kaldiio
+import json
 
 
 class CharacterTokenizer(object):
@@ -15,4 +16,17 @@ class CharacterTokenizer(object):
 
     def IdsToString(self, ids):
         return ''.join([self.id2char[i] for i in ids])
+
+
+def splice_and_subsample(feature_matrix, context_length, subsampling_rate) -> np.ndarray:
+
+    T, d = feature_matrix.shape
+
+    # Splicing
+    spliced_features = np.pad(feature_matrix, ((context_length, context_length), (0, 0)), mode='edge')
+    # spliced_features = np.concatenate([np.tile(feature_matrix[0], (context_length, 1)), feature_matrix, np.tile(feature_matrix[-1], (context_length, 1))], axis=0)
     
+    # Subsampling
+    subsampled_features = spliced_features[::subsampling_rate, :]
+    return subsampled_features
+
