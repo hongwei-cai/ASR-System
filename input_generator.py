@@ -5,11 +5,9 @@ import json
 
 class CharacterTokenizer(object):
     def __init__(self):
-        self.char2id = {}
-        self.id2char = {}
-        for i, char in enumerate("*ABCDEFGHIJKLMNOPQRSTUVWXYZ' "):
-            self.char2id[char] = i
-            self.id2char[i] = char
+        chars = "*ABCDEFGHIJKLMNOPQRSTUVWXYZ' "
+        self.char2id = {char: i for i, char in enumerate(chars)}
+        self.id2char = {i: char for i, char in enumerate(chars)}
 
     def StringToIds(self, string):
         return [self.char2id[char] for char in string]
@@ -18,21 +16,33 @@ class CharacterTokenizer(object):
         return ''.join([self.id2char[i] for i in ids])
 
 
-def splice_and_subsample(feature_matrix, context_length, subsampling_rate) -> np.ndarray:
-
+def splice_and_subsample(feature_matrix, context_length, subsampling_rate):
     T, d = feature_matrix.shape
 
-    # Splicing
-    spliced_features = np.pad(feature_matrix, ((context_length, context_length), (0, 0)), mode='edge')
-    spliced = []
-    for i in range(context_length, T + context_length):
-        frame = spliced_features[i - context_length : i + context_length + 1].reshape(-1)  # Concatenate context frames
-        spliced.append(frame)
-    spliced = np.array(spliced)
-    # spliced_features = np.concatenate([np.tile(feature_matrix[0], (context_length, 1)), feature_matrix, np.tile(feature_matrix[-1], (context_length, 1))], axis=0)
-    
-    # Subsampling
+    # Initialize spliced matrix with boundary padding
+    spliced = np.zeros((T, (2 * context_length + 1) * d))
+
+    # For each frame, concatenate context frames (handle boundaries by repeating the edge frames)
+    for t in range(T):
+        left_context = max(0, t - context_length)  # Handle left boundary
+        right_context = min(T, t + context_length + 1)  # Handle right boundary
+
+        spliced_frames = feature_matrix[left_context:right_context]
+
+        # Pad missing frames from left/right context (using edge values)
+        if t - context_length < 0:  # Left boundary
+            pad_left = context_length - t
+            spliced_frames = np.pad(spliced_frames, ((pad_left, 0), (0, 0)), mode='edge')
+        if t + context_length >= T:  # Right boundary
+            pad_right = (t + context_length + 1) - T
+            spliced_frames = np.pad(spliced_frames, ((0, pad_right), (0, 0)), mode='edge')
+
+        # Flatten spliced frames and assign to spliced matrix
+        spliced[t] = spliced_frames.flatten()
+
+    # Subsampling: Take every `subsampling_rate`-th frame
     subsampled_features = spliced[::subsampling_rate, :]
+
     return subsampled_features
 
 
@@ -122,3 +132,13 @@ class InputGenerator(object):
             batch.append((utt_id, spliced_subsampled_features, tokenized_transcript))
 
         return batch
+    
+
+if __name__ == '__main__':
+    T, d = 4, 3
+    C = 2
+    X = np.arange(12)
+    X = np.reshape(X, (T, d))
+    # print(X)
+
+    splice_and_subsample(X, C, 1)
