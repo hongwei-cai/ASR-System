@@ -55,7 +55,7 @@ output_lens = np.array([1, 2, 3, 3])
 best_costs, paths = ctc.compute_forced_alignment(-logits, input_lens, labels, output_lens)
 
 expected_best_costs= np.array([5.98974431, 5.03522297, 4.69004737, 7.33527495], dtype=np.float32)
-np.testing.assert_allclose(best_costs, expected_best_costs, atol=1e-5, rtol=1e-5)
+np.testing.assert_allclose(best_costs, expected_best_costs, rtol=1e-5, atol=1e-5)
 
 expected_paths = np.array([
     [0, 1, 1, 1, 0],

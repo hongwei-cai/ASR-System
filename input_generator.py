@@ -5,7 +5,7 @@ import json
 
 class CharacterTokenizer(object):
     def __init__(self):
-        chars = "*ABCDEFGHIJKLMNOPQRSTUVWXYZ' "
+        chars = "0ABCDEFGHIJKLMNOPQRSTUVWXYZ' "
         self.char2id = {char: i for i, char in enumerate(chars)}
         self.id2char = {i: char for i, char in enumerate(chars)}
 
