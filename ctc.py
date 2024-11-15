@@ -78,7 +78,7 @@ def modified_label_sequence(label):
 def initialize_dp_table(T, modified_length, logits, first_token):
 
     dp = np.full((T, modified_length), np.inf)
-    dp[0, 0] = logits[0, 0]  # First position must be blank
+    dp[0, 0] = logits[0, 0]  # First position is blank
     if modified_length > 1:
         dp[0, 1] = logits[0, first_token]  # Transition to the first real token
     return dp
@@ -160,8 +160,6 @@ if __name__ == "__main__":
         [1, 2, 3]])
     output_lens = np.array([1, 2, 3, 3])
     best_costs, paths = compute_forced_alignment(-logits, input_lens, labels, output_lens)
-
-
 
     print(best_costs)
     print(paths)
