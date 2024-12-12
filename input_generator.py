@@ -1,87 +1,110 @@
-import numpy as np
-import kaldiio
 import json
+import kaldiio
+import numpy as np
+import random
+import string
 
 
-class CharacterTokenizer(object):
+def splice_and_subsample(x, context=0, sub_rate=1):
+    """Splice and subsample a sequence.
+
+    Args:
+        x: numpy array of shape [n, d]
+        context: int, the length of context in both left and right
+        sub_rate: int, subsampling rate
+
+    Returns:
+        Output array of shape [(n+subrate-1)//sub_rate, (2*context+1)*d].
+    """
+    y = []
+
+    # left context
+    for i in range(context, 0, -1):
+        y.append(np.concatenate([np.repeat(x[np.newaxis, 0, :], i, axis=0), x[:-i]], axis=0))
+
+    y.append(x)
+
+    # right context
+    for i in range(1, context + 1):
+        y.append(np.concatenate([x[i:], np.repeat(x[np.newaxis, -1, :], i, axis=0)], axis=0))
+
+    return np.concatenate(y, axis=1)[::sub_rate]
+
+
+class CharacterTokenizer:
+
     def __init__(self):
-        chars = "0ABCDEFGHIJKLMNOPQRSTUVWXYZ' "
-        self.char2id = {char: i for i, char in enumerate(chars)}
-        self.id2char = {i: char for i, char in enumerate(chars)}
-
-    def StringToIds(self, string):
-        return [self.char2id[char] for char in string]
+        alphabet = string.ascii_uppercase
+        self.char_to_id = dict()
+        self.id_to_char = dict()
+        # id 0 is reserved for blank.
+        for i, c in enumerate(alphabet):
+            self.char_to_id[c] = i + 1
+            self.id_to_char[i+1] = c
+        # Apostrophy.
+        self.char_to_id["'"] = 27
+        self.id_to_char[27] = "'"
+        # Space.
+        self.char_to_id[" "] = 28
+        self.id_to_char[28] = " "
 
     def IdsToString(self, ids):
-        return ''.join([self.id2char[i] for i in ids])
+        chars = map(lambda id: self.id_to_char[id], ids)
+        return "".join(chars).strip()
 
+    def StringToIds(self, s):
+        return list(map(lambda char: self.char_to_id[char], s))
 
-def splice_and_subsample(feature_matrix, context_length, subsampling_rate):
-    T, d = feature_matrix.shape
-    padded = np.pad(feature_matrix, ((context_length, context_length), (0, 0)), mode='edge')
-    spliced = np.concatenate([padded[i:T + i] for i in range(2 * context_length + 1)], axis=1)
-    return spliced[::subsampling_rate]
+class InputGenerator:
 
+    def __init__(self, input_json, batch_size=1, shuffle=False, context_length=0, subsampling_rate=1):
+        with open(input_json, "rb") as f:
+            self.input_dict = json.load(f)['utts']
 
-class InputGenerator(object):
-    def __init__(self, json_path, batch_size, shuffle, context_length, subsampling_rate):
-        # Load the dataset from the json file (utts key)
-        with open(json_path, 'r', encoding='utf-8') as f:
-            self.data = json.load(f)['utts']
-        
+        self.utterance_ids = list(self.input_dict.keys())
+        self.num_utterances = len(self.utterance_ids)
         self.batch_size = batch_size
         self.shuffle = shuffle
+        self.num_steps_per_epoch = self.num_utterances // self.batch_size
+        self.num_elements_to_pad = 0
+        remainder = self.num_utterances % batch_size
+        if remainder > 0:
+            self.num_steps_per_epoch += 1
+            self.num_elements_to_pad = self.batch_size - remainder
+
+        self.epoch = 0
+        self.step_in_epoch = 0
+        self.epoch_order = self.generate_epoch_order()
+        self.tokenizer = CharacterTokenizer()
+
         self.context_length = context_length
         self.subsampling_rate = subsampling_rate
-        self.tokenizer = CharacterTokenizer()
-        
-        # Prepare for batching
-        self.utterance_ids = list(self.data.keys())
-        self.num_utterances = len(self.utterance_ids)
-        self.utterance_indices = list(range(self.num_utterances))
-        self.epoch = 0
-        self.steps_per_epoch = (self.num_utterances + self.batch_size - 1) // self.batch_size
-        self.total_num_steps = 0
-        self.current_step = 0
-        
+
+    def generate_epoch_order(self):
+        epoch_order = list(range(self.num_utterances))
         if self.shuffle:
-            np.random.shuffle(self.utterance_indices)
-    
+            random.shuffle(epoch_order)
+        if self.num_elements_to_pad > 0:
+            epoch_order = epoch_order + epoch_order[:self.num_elements_to_pad]
+        return epoch_order
 
     def next(self):
-        if self.current_step >= self.steps_per_epoch:
+        output = []
+        for i in range(self.step_in_epoch * self.batch_size, (self.step_in_epoch+1) * self.batch_size):
+            utterance_id = self.utterance_ids[self.epoch_order[i]]
+            d = self.input_dict[utterance_id]
+            x = splice_and_subsample(kaldiio.load_mat(d['feat']), self.context_length, self.subsampling_rate)
+            y = self.tokenizer.StringToIds(d['text'])
+            output.append((utterance_id, x, y))
+
+        self.step_in_epoch += 1
+        if self.step_in_epoch == self.num_steps_per_epoch:
             self.epoch += 1
-            self.current_step = 0
-            if self.shuffle:
-                np.random.shuffle(self.utterance_indices)
+            self.step_in_epoch = 0
+            self.epoch_order = self.generate_epoch_order()
 
-        # Get the batch indices
-        last_batch = self.total_num_steps >= self.steps_per_epoch
+        return output
 
-        start_idx = (self.steps_per_epoch - 1) * self.batch_size if last_batch else self.current_step * self.batch_size
-        end_idx = min(start_idx + self.batch_size, self.num_utterances)
-        batch_indices = self.utterance_indices[start_idx:end_idx]
-        
-        # Prepare the batch data
-        batch = []
-        for idx in batch_indices:
-            utt_id = self.utterance_ids[idx]
-            utt_info = self.data[utt_id]
-            
-            # Load acoustic features (full feature string)
-            feat_matrix = kaldiio.load_mat(utt_info['feat'])
-            
-            # Splice and subsample the features
-            spliced_subsampled_features = splice_and_subsample(feat_matrix, self.context_length, self.subsampling_rate)
-            
-            # Tokenize transcript
-            transcript = utt_info['text']
-            tokenized_transcript = self.tokenizer.StringToIds(transcript)
-            
-            batch.append((utt_id, spliced_subsampled_features, tokenized_transcript))
-        
-        if not last_batch:
-            self.current_step += 1
-            self.total_num_steps += 1
-        
-        return batch
+    @property
+    def total_num_steps(self):
+        return self.num_steps_per_epoch * self.epoch + self.step_in_epoch

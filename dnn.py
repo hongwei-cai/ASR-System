@@ -29,44 +29,33 @@ def compute_ce_loss(out, y, loss_mask):
     Returns:
         Cross entropy loss averaged over valid samples, and gradient wrt output.
     """
-    # Apply softmax to get probabilities
+    batch = out.shape[1]
     probs = compute_softmax(out)
+    neg_log_probs = - np.log(probs)
 
-    # Select the probabilities for the true labels
-    batch_size = y.shape[0]
-    target_probs = probs[y, np.arange(batch_size)]
-
-    # Compute the cross-entropy loss, applying the loss mask
-    masked_loss = -np.log(target_probs) * loss_mask
-    loss = np.sum(masked_loss) / np.sum(loss_mask)
-
-    # Calculate the gradient of the loss with respect to the output
-    grad = probs.copy()
-    grad[y, np.arange(batch_size)] -= 1
-    grad *= loss_mask  # Only mask out the invalid samples without averaging over the batch
-    
-    return loss, grad
+    y_one_hot = np.zeros_like(out)
+    col_idx = np.arange(batch, dtype=np.int32)
+    rol_idx = np.array(y, dtype=np.int32)
+    y_one_hot[rol_idx, col_idx] = 1.0
+    loss_vec = np.sum(neg_log_probs * y_one_hot, 0)
+    loss = np.sum(loss_vec * loss_mask) / np.sum(loss_mask)
+    return loss, probs - y_one_hot
 
 
 class FeedForwardNetwork:
 
     def __init__(self, din, dout, num_hidden_layers, hidden_layer_width):
+        self.din = din
+        self.dout = dout
+        self.num_hidden_layers = num_hidden_layers
         self.weights = []
         self.biases = []
-
-        # Input layer to the first hidden layer
-        self.weights.append(np.random.uniform(-0.05, 0.05, (hidden_layer_width, din)))
-        self.biases.append(np.zeros(hidden_layer_width))
-
-        # Hidden layers
-        for _ in range(num_hidden_layers - 1):
-            self.weights.append(np.random.uniform(-0.05, 0.05, (hidden_layer_width, hidden_layer_width)))
-            self.biases.append(np.zeros(hidden_layer_width))
-
-        # Last hidden layer to the output layer
-        self.weights.append(np.random.uniform(-0.05, 0.05, (dout, hidden_layer_width)))
-        self.biases.append(np.zeros(dout))
-
+        widths = [din] + [hidden_layer_width] * num_hidden_layers + [dout]
+        for i in range(self.num_hidden_layers+1):
+            w = np.random.uniform(-0.05, 0.05, size=[widths[i+1], widths[i]])
+            self.weights.append(w)
+            b = np.zeros(widths[i+1])
+            self.biases.append(b)
 
     def forward(self, x):
         """Forward the feedforward neural network.
@@ -78,20 +67,15 @@ class FeedForwardNetwork:
             Output of shape [dout, batch], and a list of hidden layer activations,
             each of the shape [hidden_layer_width, batch].
         """
-        activations = []
-        a = x
-
-        # Forward pass through hidden layers
-        for i in range(len(self.weights) - 1):
-            z = np.dot(self.weights[i], a) + self.biases[i][:, np.newaxis]
-            a = np.maximum(0, z)  # ReLU activation
-            activations.append(a)
-
-        # Output layer (no activation)
-        out = np.dot(self.weights[-1], a) + self.biases[-1][:, np.newaxis]
-        
-        return out, activations
-
+        res = x
+        hidden = []
+        for i in range(self.num_hidden_layers+1):
+            res = np.matmul(self.weights[i], res) + self.biases[i][:, None]
+            if i < self.num_hidden_layers:
+                # Apply ReLU activation.
+                res[res < 0] = 0
+                hidden.append(res)
+        return res, hidden
 
     def backward(self, x, hidden, loss_grad, loss_mask):
         """Backpropagation of feedforward neural network.
@@ -105,28 +89,32 @@ class FeedForwardNetwork:
         Returns:
             Returns gradient, averaged over valid samples, with respect to weights and biases.
         """
-        grad_w = []
-        grad_b = []
+        num_samples = np.sum(loss_mask)
 
-        # Output layer gradient
-        delta = loss_grad * loss_mask  # Apply loss mask directly to the gradient
-        grad_w.append(np.dot(delta, hidden[-1].T) / np.sum(loss_mask))
-        grad_b.append(np.sum(delta, axis=1) / np.sum(loss_mask))
+        loss_grad = loss_grad * loss_mask[None, :]
+        # Last layer is linear, no activation.
+        # shape [dout, hidden_layer_width]
+        grad_w = [np.matmul(loss_grad, np.transpose(hidden[-1])) / num_samples]
+        grad_b = [np.sum(loss_grad, 1) / num_samples]
+        # shape [hidden_layer_width, n]
+        grad_hidden = np.matmul(np.transpose(self.weights[-1]), loss_grad)
 
-        # Hidden layers gradients (backward pass)
-        for i in range(len(self.weights) - 2, -1, -1):
-            # Backpropagate delta through the weights of the next layer and apply ReLU derivative
-            delta = np.dot(self.weights[i + 1].T, delta) * (hidden[i] > 0)
-            
-            # Apply the loss mask to the delta
-            delta *= loss_mask
+        for i in range(self.num_hidden_layers-1, -1, -1):
+            activation = hidden[i]
+            # Gradient of ReLU activation.
+            # shape [hidden_layer_width, n]
+            grad_hidden[activation <= 0] = 0
+            grad_hidden *= loss_mask[None, :]
+            if i==0:
+                prev_activation = x
+            else:
+                prev_activation = hidden[i-1]
+            grad_w.insert(0, np.matmul(grad_hidden, np.transpose(prev_activation)) / num_samples)
+            grad_b.insert(0, np.sum(grad_hidden, 1) / num_samples)
+            # shape [prev_layer_width, n]
+            grad_hidden = np.matmul(np.transpose(self.weights[i]), grad_hidden)
 
-            # Calculate gradients for the current layer
-            grad_w.insert(0, np.dot(delta, (x if i == 0 else hidden[i - 1]).T) / np.sum(loss_mask))
-            grad_b.insert(0, np.sum(delta, axis=1) / np.sum(loss_mask))
-            
         return grad_w, grad_b
-
 
     def update_model(self, w_updates, b_updates):
         """Update the weights and biases of the model.
