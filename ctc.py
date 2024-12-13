@@ -151,7 +151,7 @@ def beam_search(log_probs, input_lens):
     """Performs CTC beam search.
 
     Args:
-        logits: [batch, T, num_classes]
+        log_probs: [batch, T, num_classes]
         input_lens: [batch]
 
     Returns:
@@ -165,7 +165,12 @@ def beam_search(log_probs, input_lens):
     decoded, _ = tf.nn.ctc_beam_search_decoder(log_probs_tf, input_lens, beam_width=30, top_paths=1)
     # Padded positions in hyps will have value 0.
     hyps = tf.sparse.to_dense(decoded[0], default_value=-1).numpy() + 1
-    return [h[h!=0] for h in hyps]
+    return [h[h != 0] for h in hyps]
+
+# Example usage
+log_probs = np.random.rand(2, 10, 29)  # [batch, T, num_classes]
+input_lens = np.array([10, 10])
+print(beam_search(log_probs, input_lens))
 
 
 def compute_ctc_alpha(logits, input_lens, labels, output_lens, blank_id=0):
