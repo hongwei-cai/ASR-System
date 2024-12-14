@@ -20,16 +20,16 @@ batch_size = 32
 context_length = 7
 subsampling_rate = 3
 
-initial_learning_rate = 0.00003
+initial_learning_rate = 0.001
 initial_beta = 0.99
 decay_rate = 0.95
 decay_epochs = 5
 gradient_clip_value = 0.05
-weight_decay = 1e-2  # L2 regularization
+weight_decay = 1e-4  # L2 regularization
 
 # Input generators
-train_iter = input_generator.InputGenerator('train_data.json', batch_size=batch_size, shuffle=True, context_length=context_length, subsampling_rate=subsampling_rate)
-valid_iter = input_generator.InputGenerator('dev_data.json', batch_size=1, shuffle=False, context_length=context_length, subsampling_rate=subsampling_rate)
+train_iter = InputGenerator('train_data.json', batch_size=batch_size, shuffle=True, context_length=context_length, subsampling_rate=subsampling_rate)
+valid_iter = InputGenerator('dev_data.json', batch_size=1, shuffle=False, context_length=context_length, subsampling_rate=subsampling_rate)
 
 def evaluate(model, data_iter):
     data_iter.epoch = 0
@@ -152,10 +152,10 @@ def train():
             b_updates = [-learning_rate * mb for mb in momentum_b]
 
             # Debug statements to monitor parameter updates
-            # for i, (wu, bu) in enumerate(zip(w_updates, b_updates)):
-            #     print(f"Layer {i} - Update W: {np.mean(wu)}, Update B: {np.mean(bu)}")
-            #     print(f"Layer {i} - Update W min: {np.min(wu)}, max: {np.max(wu)}")
-            #     print(f"Layer {i} - Update B min: {np.min(bu)}, max: {np.max(bu)}")
+            for i, (wu, bu) in enumerate(zip(w_updates, b_updates)):
+                print(f"Layer {i} - Update W: {np.mean(wu)}, Update B: {np.mean(bu)}")
+                print(f"Layer {i} - Update W min: {np.min(wu)}, max: {np.max(wu)}")
+                print(f"Layer {i} - Update B min: {np.min(bu)}, max: {np.max(bu)}")
 
             network.update_model(w_updates, b_updates)
 

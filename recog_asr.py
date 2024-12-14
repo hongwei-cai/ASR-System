@@ -1,23 +1,22 @@
 import numpy as np
-import editdistance
 import dnn
 import ctc
-from input_generator import InputGenerator
-
+import input_generator
+import editdistance
 
 # Define model parameters
-DIN = 83 * 15  # input dimension
-DOUT = 29  # output dimension (number of tokens)
-NUM_HIDDEN_LAYERS = 3
-HIDDEN_LAYER_WIDTH = 2048
+din = 83 * 15  # input dimension
+dout = 29  # output dimension (number of tokens)
+num_hidden_layers = 2
+hidden_layer_width = 512
 
 # Instantiate the model
-network = dnn.FeedForwardNetwork(DIN, DOUT, NUM_HIDDEN_LAYERS, HIDDEN_LAYER_WIDTH)
+network = dnn.FeedForwardNetwork(din, dout, num_hidden_layers, hidden_layer_width)
 
 # Input generator for validation
-CONTEXT_LENGTH = 7
-SUBSAMPLING_RATE = 3
-valid_iter = InputGenerator('dev_data.json', batch_size=1, shuffle=False, context_length=CONTEXT_LENGTH, subsampling_rate=SUBSAMPLING_RATE)
+context_length = 7
+subsampling_rate = 3
+valid_iter = input_generator.InputGenerator('dev_data.json', batch_size=1, shuffle=False, context_length=context_length, subsampling_rate=subsampling_rate)
 
 def evaluate_checkpoint(model, data_iter):
     data_iter.epoch = 0
