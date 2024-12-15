@@ -25,12 +25,12 @@ except FileNotFoundError:
 NUM_EPOCHS = 60
 BATCH_SIZE = 16
 
-INITIAL_LEARNING_RATE = 0.005
-INITIAL_BETA = 0.999
-DECAY_RATE = 0.99
-DECAY_EPOCHS = 9
-MAX_GRAD_NORM = 1.0
-WEIGHT_DECAY = 1e-6
+INITIAL_LEARNING_RATE = 4e-5
+INITIAL_BETA = 0.99
+DECAY_RATE = 0.95
+DECAY_EPOCHS = 10
+MAX_GRAD_NORM = 0.5
+WEIGHT_DECAY = 1e-5
 PATIENCE = 10
 
 # Input generators
@@ -73,23 +73,9 @@ def train():
             batch_size = x.shape[1]
             loss_mask = np.ones([batch_size], dtype=np.float32)
 
-            # Check input data for NaNs
-            if np.isnan(x).any():
-                print("Input contains NaNs. Skipping this batch.")
-                continue
-
             # Forward pass
             out, hidden = network.forward(x)
-            
-            # Check forward output for NaNs
-            if np.isnan(out).any():
-                print("Forward output contains NaNs. Skipping this batch.")
-                continue
-
             out = out.reshape(batch_size, -1, DOUT)
-            assert out.shape[2] == DOUT, f"Unexpected output shape: {out.shape}"
-            print(f"Forward output contains NaNs: {np.isnan(out).any()}, Infs: {np.isinf(out).any()}")
-
             out = compute_softmax(out)
             out = np.clip(out, 1e-8, 1.0)
 
@@ -98,14 +84,14 @@ def train():
 
             alignment = alignment.flatten()  # Flatten alignment to match the shape of y
             loss, loss_grad = compute_ce_loss(out.reshape(DOUT, -1), alignment, loss_mask)
-            l2_loss = WEIGHT_DECAY * sum(np.sum(w ** 2) for w in network.weights)
-            loss += l2_loss
+            # l2_loss = WEIGHT_DECAY * sum(np.sum(w ** 2) for w in network.weights)
+            # loss += l2_loss
 
             grad_w, grad_b = network.backward(x, hidden, loss_grad, loss_mask)
 
             # Gradient clipping
-            grad_w = [np.clip(gw, -MAX_GRAD_NORM, MAX_GRAD_NORM) for gw in grad_w]
-            grad_b = [np.clip(gb, -MAX_GRAD_NORM, MAX_GRAD_NORM) for gb in grad_b]
+            # grad_w = [np.clip(gw, -MAX_GRAD_NORM, MAX_GRAD_NORM) for gw in grad_w]
+            # grad_b = [np.clip(gb, -MAX_GRAD_NORM, MAX_GRAD_NORM) for gb in grad_b]
 
             momentum_w = [beta * mw + gw for (mw, gw) in zip(momentum_w, grad_w)]
             momentum_b = [beta * mb + gb for (mb, gb) in zip(momentum_b, grad_b)]
@@ -131,5 +117,8 @@ def train():
         
         epoch += 1
 
-if __name__ == "__main__":
+if __name__ == '__main__':
+    # Start training
     train()
+    # network.save_model("asr_model.pkl")
+    # print("Model saved.")
